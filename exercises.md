@@ -28,13 +28,13 @@ Theo bài giảng:
 Với từng metric, xác định khi nào score thấp có thể chấp nhận và khi nào là
 critical.
 
-| Metric | Acceptable Low Score Scenario | Critical Low Score Scenario | Action Required |
+| Metric | Khi nào score thấp chấp nhận được | Khi nào score thấp là nghiêm trọng | Hành động cần thực hiện |
 |---|---|---|---|
-| Faithfulness | | | |
-| Answer Relevance | | | |
-| Context Recall | | | |
-| Context Precision | | | |
-| Completeness | | | |
+| Faithfulness | Câu hỏi mở yêu cầu suy luận, câu trả lời có thể mở rộng hợp lý ngoài context (ví dụ: tóm tắt kèm suy diễn). Score 0.6–0.8 có thể chấp nhận. | Lĩnh vực y tế, tài chính hoặc chính sách mà thông tin bịa đặt gây hại thực tế. Score dưới 0.6 là dấu hiệu rủi ro hallucination. | Thêm cơ chế kiểm tra hallucination; yêu cầu trích dẫn nguồn; siết system prompt để cấm đưa thông tin không có trong context. |
+| Answer Relevance | Câu hỏi rộng hoặc nhiều phần, câu trả lời đã giải quyết phần lớn nhưng có chi tiết phụ không liên quan. Score 0.6–0.8 chấp nhận được. | Câu hỏi tra cứu đơn giản (ví dụ: "Hạn đóng học phí là ngày nào?") mà trả lời lạc đề gây lãng phí thời gian. Dưới 0.6 là nghiêm trọng. | Cải thiện prompt rõ ràng hơn; thêm few-shot examples về câu trả lời đúng ý; kiểm tra logic phân loại câu hỏi. |
+| Context Recall | Câu hỏi về nội dung mới hoặc chuyên biệt mà retriever chưa có đủ dữ liệu. Score 0.5–0.7 tạm chấp nhận khi corpus đang mở rộng. | Câu hỏi cốt lõi về domain (ví dụ: hạn đăng ký, chính sách hoàn tiền) mà thiếu evidence dẫn đến trả lời thiếu hoặc bịa. Dưới 0.5 là nghiêm trọng. | Mở rộng corpus; điều chỉnh chiến lược chunking; thêm xử lý từ đồng nghĩa trong retriever; cân nhắc retrieval kết hợp (BM25 + dense). |
+| Context Precision | Retriever trả về nhiều chunks và phần lớn liên quan — nhiễu ranking chấp nhận được nếu recall cao. Score 0.5–0.7 có thể chấp nhận. | Context window nhỏ và nhiễu chiếm chỗ evidence quan trọng, khiến generator bỏ sót thông tin chính. Dưới 0.5 là nghiêm trọng. | Thêm reranking (cross-encoder); giảm top-k nếu nhiễu quá nhiều; cải thiện ranh giới chunk để giảm match không chính xác. |
+| Completeness | Câu hỏi đơn giản (có/không, tra cứu 1 thông tin) mà trả lời một phần vẫn đáp ứng nhu cầu. Score 0.6–0.8 chấp nhận được. | Câu hỏi chính sách nhiều điều kiện (ví dụ: điều kiện hoàn tiền kèm ngoại lệ) mà thiếu điều kiện dẫn đến hành động sai. Dưới 0.5 là nghiêm trọng. | Tăng kích thước context window; cải thiện retrieval để lấy đủ evidence; thêm hướng dẫn trong prompt yêu cầu trả lời đầy đủ. |
 
 ### Exercise 1.2 — Bias trong LLM-as-a-Judge
 
@@ -47,14 +47,31 @@ Ba bias thường gặp:
 **Câu 1: Thiết kế experiment phát hiện position bias với ít nhất hai conditions.**
 
 > *Câu trả lời:*
+>
+> **Thiết kế thí nghiệm — 2 điều kiện:**
+>
+> - **Điều kiện A (Thứ tự gốc):** Đưa Answer X trước, Answer Y sau cho LLM judge chấm điểm.
+> - **Điều kiện B (Đảo thứ tự):** Đưa Answer Y trước, Answer X sau, giữ nguyên toàn bộ nội dung khác.
+>
+> **Quy trình:** Chọn tối thiểu 50 cặp câu hỏi-câu trả lời. Mỗi cặp được judge chấm ở cả hai điều kiện. Nếu judge có position bias, answer ở vị trí đầu sẽ luôn được chấm cao hơn một cách có hệ thống. Đo sự khác biệt trung bình giữa score khi answer ở vị trí 1 so với vị trí 2. Dùng paired t-test hoặc Wilcoxon signed-rank test để kiểm tra ý nghĩa thống kê. Nếu p < 0.05 và mức chênh lệch > 0.1 điểm, kết luận có position bias.
 
 **Câu 2: Làm thế nào giảm verbosity bias bằng rubric design?**
 
 > *Câu trả lời:*
+>
+> 1. **Phạt rõ ràng khi dài dòng:** Rubric ghi rõ "Câu trả lời dài hơn mức cần thiết mà không thêm thông tin mới sẽ bị trừ điểm. Score 5 yêu cầu ngắn gọn."
+> 2. **Tách tiêu chí riêng:** Tạo dimension Conciseness (Ngắn gọn) riêng biệt (1–5) — answer ngắn mà đủ ý được điểm cao; answer dài nhưng lặp lại hoặc thêm filler bị điểm thấp.
+> 3. **Ví dụ mẫu chuẩn:** Đưa 2 ví dụ cụ thể trong rubric — một answer ngắn gọn đạt score 5 và một answer dài dòng chỉ đạt score 3 — để judge hiểu tiêu chuẩn.
+> 4. **Đánh giá mật độ thông tin:** Hướng dẫn judge đánh giá số lượng thông tin hữu ích trên mỗi câu (information density) thay vì đánh giá theo tổng độ dài văn bản.
 
 **Câu 3: Tại sao cần calibrate LLM judge với human labels?**
 
 > *Câu trả lời:*
+>
+> 1. **Phát hiện bias hệ thống:** LLM judge có thể chấm điểm cao hơn (leniency bias) hoặc thấp hơn (severity bias) so với con người. So sánh với nhãn do người chấm giúp phát hiện mức chênh lệch cần điều chỉnh.
+> 2. **Đảm bảo đo đúng thứ cần đo:** Nhãn của người xác nhận rằng judge thực sự đang đánh giá faithfulness chứ không phải fluency hay độ dài câu trả lời.
+> 3. **Thiết lập độ tin cậy giữa các người đánh giá:** Tính Cohen's kappa hoặc Pearson correlation giữa judge và người. Nếu mức đồng thuận thấp (< 0.6), cần sửa rubric hoặc prompt trước khi tin tưởng judge ở quy mô lớn.
+> 4. **Giảm chi phí đánh giá thủ công:** Sau khi calibrate thành công, LLM judge có thể thay thế phần lớn công việc đánh giá của con người, nhưng chỉ khi đã chứng minh tương quan đủ cao trên tập calibration.
 
 ### Exercise 1.3 — Evaluation trong CI/CD
 
@@ -62,13 +79,19 @@ Ba bias thường gặp:
 
 | Metric | Threshold | Lý do |
 |---|---:|---|
-| Faithfulness | | |
-| Answer Relevance | | |
-| Completeness | | |
+| Faithfulness | ≥ 0.70 | Student Services cung cấp thông tin chính sách (học phí, deadline, hoàn tiền). Hallucination có thể khiến sinh viên hành động sai (trễ hạn, mất tiền). Threshold 0.70 đảm bảo ít nhất 70% nội dung câu trả lời có căn cứ từ context. |
+| Answer Relevance | ≥ 0.60 | Sinh viên hỏi câu hỏi cụ thể và cần câu trả lời đúng ý. Threshold 0.60 cho phép linh hoạt với câu hỏi nhiều phần nhưng chặn câu trả lời hoàn toàn lạc đề. |
+| Completeness | ≥ 0.55 | Câu hỏi chính sách thường có nhiều điều kiện và ngoại lệ. Threshold 0.55 yêu cầu answer bao phủ hơn nửa nội dung mong đợi. Thấp hơn Faithfulness vì trả lời thiếu ít hại hơn trả lời sai — sinh viên có thể hỏi lại nhưng không thể tự phát hiện thông tin bịa. |
 
 **Câu 2: Khi nào dùng offline evaluation, online evaluation và human review?**
 
 > *Câu trả lời:*
+>
+> | Loại đánh giá | Khi nào dùng | Ví dụ cụ thể |
+> |---|---|---|
+> | **Offline evaluation** | Trước mỗi lần deployment — chạy tự động trong CI/CD pipeline trên golden dataset cố định. Dùng khi thay đổi prompt, model, cấu hình retrieval, hoặc corpus. | Chạy `pytest` + benchmark trên 20 golden QA pairs. Nếu avg faithfulness < 0.70 → chặn merge/deploy. |
+> | **Online evaluation** | Sau deployment — theo dõi traffic thực từ người dùng để phát hiện vấn đề mà golden dataset không cover (phân phối câu hỏi thay đổi, loại câu hỏi mới). | Theo dõi feedback người dùng (like/dislike), thời gian phản hồi, tỷ lệ fallback. Cảnh báo nếu tỷ lệ hài lòng giảm > 5% trong 24 giờ. |
+> | **Human review** | Định kỳ (hàng tuần/tháng) hoặc khi metrics offline/online cho kết quả bất thường. Cần thiết cho các edge case và calibration. | Chuyên gia review 20 câu trả lời production ngẫu nhiên mỗi tuần. Dùng để cập nhật golden dataset, calibrate LLM judge, và phát hiện failure patterns mới. |
 
 ---
 
